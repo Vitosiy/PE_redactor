@@ -80,7 +80,7 @@ void EditImportTable2(PeHeaders* pe);
 
 void EditImportTable2Header(PeHeaders* pe);
 
-void EditImportTable3(PeHeaders* pe);
+//void EditImportTable3(PeHeaders* pe);
 
 void EditExportTable(PeHeaders* pe);
 

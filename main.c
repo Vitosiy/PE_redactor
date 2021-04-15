@@ -126,9 +126,9 @@ int main(int argc, char** argv) {
 			EditImportTable2Header(&pe);
 		}
 
-		else if (strcmp(argv[2], "import_interactive3") == 0) {
+		/*else if (strcmp(argv[2], "import_interactive3") == 0) {
 			EditImportTable3(&pe);
-		}
+		}*/
 
 		else if (strcmp(argv[2], "export_interactive") == 0) {
 			EditExportTable(&pe);

@@ -418,9 +418,10 @@ void EditRelocs2(PeHeaders* pe) {
 		base_reloc_offset = (WORD*)((DWORD)reloc + sizeof(IMAGE_BASE_RELOCATION));
 		offset_value = (DWORD*)(pe->mem + RvaToOffset(reloc->VirtualAddress, pe));
 		for (i = 0; i < (reloc->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD); i++) {
-			tmp = (DWORD)offset_value + (DWORD)(base_reloc_offset[i] & 0x0FFF);
-			*tmp = (DWORD)*tmp + value;
-
+			if (base_reloc_offset[i] != 0) {
+				tmp = (DWORD)offset_value + (DWORD)(base_reloc_offset[i] & 0x0FFF);
+				*tmp = (DWORD)*tmp + value;
+			}
 		}
 
 		offset += reloc->SizeOfBlock;
@@ -431,19 +432,19 @@ void EditRelocs2(PeHeaders* pe) {
 
 }
 
-DWORD _GetSectionNumber(PeHeaders* pe) {
-	DWORD sections = 0, offset = 0;
+DWORD _GetBlockNumber(PeHeaders* pe) {
+	DWORD blocks = 0, offset = 0;
 	IMAGE_BASE_RELOCATION* reloc = pe->relocs_directory;
 	while (offset < pe->reloc_directory_size) {
-		sections++;
+		blocks++;
 		offset += reloc->SizeOfBlock;
 		reloc = (IMAGE_BASE_RELOCATION*)((DWORD)reloc + reloc->SizeOfBlock);
 	}
-	return sections;
+	return blocks;
 }
 
 void _FillBlockElementsCounters(PeHeaders* pe, DWORD* arr, const DWORD len) {
-	DWORD current_section = 0, i = 0, cntr = 0;
+	DWORD i = 0, cntr = 0;
 	IMAGE_BASE_RELOCATION* reloc = pe->relocs_directory;
 	WORD* base_reloc_offset;
 
@@ -462,11 +463,11 @@ void _FillBlockElementsCounters(PeHeaders* pe, DWORD* arr, const DWORD len) {
 	}
 }
 
-BOOL _PrintRelocSectionsAndCheckForFree(const DWORD* arr, const DWORD len) {
+BOOL _PrintRelocBlocksAndCheckForFree(const DWORD* arr, const DWORD len) {
 	DWORD i = 0;
 	BOOL res = 0;
 	for (i = 0; i < len; i++) {
-		printf("Section %d has %d free relocs\n", i, arr[i]);
+		printf("Block %d has %d free relocs\n", i, arr[i]);
 		if (arr[i]) {
 			res = 1;
 		}
@@ -481,12 +482,12 @@ void EditRelocs3(PeHeaders* pe) {
 	WORD* base_reloc_offset;
 	IMAGE_BASE_RELOCATION* reloc = pe->relocs_directory;
 	DWORD current_section = 0;
-	DWORD* free_relocs;
+	DWORD* free_blocks;
 
-	DWORD sections = _GetSectionNumber(pe);
-	free_relocs = (DWORD*)malloc(sections * sizeof(DWORD));
-	_FillBlockElementsCounters(pe, free_relocs, sections);
-	there_is_free_reloc = _PrintRelocSectionsAndCheckForFree(free_relocs, sections);
+	DWORD blocks = _GetBlockNumber(pe);
+	free_blocks = (DWORD*)malloc(blocks * sizeof(DWORD));
+	_FillBlockElementsCounters(pe, free_blocks, blocks);
+	there_is_free_reloc = _PrintRelocBlocksAndCheckForFree(free_blocks, blocks);
 
 	if (there_is_free_reloc) {
 		printf("Edit any free reloc or insert new? (F - for free/N - for new): ");
@@ -494,9 +495,9 @@ void EditRelocs3(PeHeaders* pe) {
 		if (ch == 'F' || ch == 'f') {
 			DWORD secnum;
 			do {
-				printf("Enter section number: ");
+				printf("Enter block number: ");
 				scanf("%d", &secnum);
-			} while (!free_relocs[secnum]);
+			} while (!free_blocks[secnum]);
 
 			current_section = 0;
 			while (offset < pe->reloc_directory_size) {
@@ -520,7 +521,7 @@ void EditRelocs3(PeHeaders* pe) {
 							tmp = tmp + tmp2;
 							memcpy(&base_reloc_offset[i], &tmp, 2);
 
-							free_relocs[secnum]--;
+							free_blocks[secnum]--;
 							break;
 						}
 					}
@@ -533,7 +534,7 @@ void EditRelocs3(PeHeaders* pe) {
 		}
 		else if (ch == 'N' || ch == 'n') {
 			DWORD secnum, cntr = 0, size, last_va = 0;
-			printf("Enter section number where to insert: ");
+			printf("Enter block number where to insert: ");
 			scanf("%d", &secnum);
 			while (offset < pe->reloc_directory_size) {
 				base_reloc_offset = (WORD*)((DWORD)reloc + sizeof(IMAGE_BASE_RELOCATION));
@@ -577,7 +578,7 @@ void EditRelocs3(PeHeaders* pe) {
 		}
 	}
 
-	free(free_relocs);
+	free(free_blocks);
 }
 
 void EditRelocs3NewBlock(PeHeaders* pe) {
@@ -789,7 +790,7 @@ void EditImportTable2(PeHeaders* pe) {
 					memcpy(&pe->impdir->OriginalFirstThunk, &new_iat, sizeof(DWORD));
 				}
 				else {
-					memcpy(&pe->impdir->OriginalFirstThunk, &new_iat, sizeof(DWORD));
+					memcpy(&pe->impdir->FirstThunk, &new_iat, sizeof(DWORD));
 				}
 			}
 			imp++;
@@ -840,6 +841,7 @@ void EditImportTable2Header(PeHeaders* pe) {
 	}
 }
 
+/*
 void EditImportTable3(PeHeaders* pe) {
 	if (pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress) {
 		IMAGE_BOUND_IMPORT_DESCRIPTOR ibid;
@@ -852,7 +854,7 @@ void EditImportTable3(PeHeaders* pe) {
 
 	}
 
-}
+}*/
 
 void EditExportTable(PeHeaders* pe) {
 	if (pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress) {
@@ -1034,7 +1036,7 @@ DWORD ExtendFileSizeCreatingNewSection(PeHeaders* pe) {
 
 	pe->nthead->FileHeader.NumberOfSections++;
 	pe->countSec++;
-	memcpy(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Name, new_name, sizeof(new_name));
+	memcpy(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Name, new_name, strlen(new_name));
 
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = raw_size;
 	//pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = virtual_size;
@@ -1054,16 +1056,17 @@ DWORD ExtendFileSizeCreatingNewSection(PeHeaders* pe) {
 DWORD ExtendFileSizeCreatingNewSectionNeededSize(PeHeaders* pe, const DWORD size) {
 	char* new_name = ".custom";
 	DWORD raw_size = pe->nthead->OptionalHeader.FileAlignment;
+	DWORD tmp = raw_size;
 	DWORD virtual_size = pe->nthead->OptionalHeader.SectionAlignment, i = 1;
 
 	do {
-		raw_size = raw_size * i;
+		raw_size = tmp * i;
 		i++;
 	} while (raw_size < size);
 
 	pe->nthead->FileHeader.NumberOfSections++;
 	pe->countSec++;
-	memcpy(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Name, new_name, sizeof(new_name));
+	memcpy(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Name, new_name, strlen(new_name));
 
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = raw_size;
 	//pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = virtual_size;
