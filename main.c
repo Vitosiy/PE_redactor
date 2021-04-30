@@ -21,6 +21,19 @@ void usage(const char* progname) {
 	puts("sections_interactive - change sections different data");
 	puts("data_directory_interactive - reset data directory different data");
 
+	puts("reloc_interactive1 - block header modification, block element modification");
+	puts("reloc_interactive2 - reconfiguration of all corrected addresses to the new base download address");
+	puts("reloc_interactive3 - adding a new element to a block");
+	puts("reloc_interactive3header - adding a new block");
+	
+	puts("import_interactive - modifying the import descriptor");
+	puts("import_interactive2 - adding a new function to an import descriptor");
+	puts("import_interactive2_header - adding an import descriptor");
+
+	puts("export_interactive - library name modification, function name modification, function address");
+	puts("export_interactive2 - adding a new function, adding a new function name");
+
+	puts("extend_filesize - extend file size");
 }
 
 int main(int argc, char** argv) {
@@ -144,6 +157,10 @@ int main(int argc, char** argv) {
 
 		else if (strcmp(argv[2], "extend_file_size_non_interactive") == 0) {
 			ExtendFileSizeCreatingNewSection(&pe);
+		}
+
+		else if (strcmp(argv[2], "extend_filesize") == 0) {
+		ExtendFileSize(&pe);
 		}
 
 		UnmapViewOfFile(pe.mem);

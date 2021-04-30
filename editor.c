@@ -270,11 +270,11 @@ void EditTableSection(PeHeaders* peh) {
 	if (ch == 1) {
 		BYTE new_name[IMAGE_SIZEOF_SHORT_NAME];
 		scanf("%s", &new_name);
-		sprintf((char*)&peh->sections[secnum].Name, "%s", new_name); //здесь не трогать
+		sprintf((char*)&peh->sections[secnum].Name, "%s", new_name); 
 	}
 	else if (ch == 2) {
 		scanf("%d", &ch);
-		//sprintf((char*)&peh->sections[secnum].VirtualAddress, "%s", (char*)&ch);	//TODO: ЗАТИРАЕТ НУЖНЫЕ ЗНАЧЕНИЯ \0 В КОНЦЕ. ИСПРАВИТЬ
+		//sprintf((char*)&peh->sections[secnum].VirtualAddress, "%s", (char*)&ch);
 		memcpy((char*)&peh->sections[secnum].VirtualAddress, (char*)&ch, sizeof(DWORD));
 	}
 	else if (ch == 3) {
@@ -412,7 +412,7 @@ void EditRelocs2(PeHeaders* pe) {
 	IMAGE_BASE_RELOCATION* reloc = pe->relocs_directory;
 
 	puts("Enter number to add: ");
-	scanf("%d", &value);
+	scanf("%x", &value);
 
 	while (offset < pe->reloc_directory_size) {
 		base_reloc_offset = (WORD*)((DWORD)reloc + sizeof(IMAGE_BASE_RELOCATION));
@@ -594,44 +594,26 @@ void EditRelocs3NewBlock(PeHeaders* pe) {
 		reloc = (IMAGE_BASE_RELOCATION*)((DWORD)reloc + reloc->SizeOfBlock);
 	}
 
-	int flag = 1;
 	base_reloc_offset = (WORD*)((DWORD)reloc);
-	for (int i = 0; i < size; i++) {
-		if (base_reloc_offset[i] == 0 || base_reloc_offset[i] == NULL) {
-			continue;
-		}
-		else {
-			flag = 0;
-			break;
-		}
-	}
-	if (flag == 1) {
-		IMAGE_BASE_RELOCATION new_reloc;
-		new_reloc.SizeOfBlock = size;
-		new_reloc.VirtualAddress = last_va + pe->nthead->OptionalHeader.SectionAlignment;
-		memcpy(reloc, &new_reloc, sizeof(new_reloc));
-		pe->reloc_directory_size += size;
-		pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size += size;
-	}
-	else {
-		DWORD write_here;
-		IMAGE_BASE_RELOCATION new_reloc;
+	
+	DWORD write_here;
+	IMAGE_BASE_RELOCATION new_reloc;
 		
-		ExtendFileSizeCreatingNewSectionNeededSize(pe, pe->reloc_directory_size + size);
-		write_here = pe->mem + RvaToOffset(pe->sections[pe->countSec - 1].VirtualAddress, pe);
+	ExtendFileSizeCreatingNewSectionNeededSize(pe, pe->reloc_directory_size + size);
+	write_here = pe->mem + RvaToOffset(pe->sections[pe->countSec - 1].VirtualAddress, pe);
 		
-		memcpy(write_here, (DWORD*)pe->relocs_directory, pe->reloc_directory_size);
+	memcpy(write_here, (DWORD*)pe->relocs_directory, pe->reloc_directory_size);
 		
-		new_reloc.SizeOfBlock = size;
-		new_reloc.VirtualAddress = last_va + pe->nthead->OptionalHeader.SectionAlignment;
-		memcpy(write_here + pe->reloc_directory_size, &new_reloc, sizeof(new_reloc));
+	new_reloc.SizeOfBlock = size;
+	new_reloc.VirtualAddress = last_va + pe->nthead->OptionalHeader.SectionAlignment;
+	memcpy(write_here + pe->reloc_directory_size, &new_reloc, sizeof(new_reloc));
 		
-		pe->reloc_directory_size += size;
-		pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size += size;
-		pe->relocs_directory = write_here;
-		pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress = pe->sections[pe->countSec - 1].VirtualAddress;
+	pe->reloc_directory_size += size;
+	pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size += size;
+	pe->relocs_directory = write_here;
+	pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress = pe->sections[pe->countSec - 1].VirtualAddress;
 
-	}
+
 }
 
 void EditImportTable(PeHeaders* pe) {
@@ -745,16 +727,18 @@ void EditImportTable2(PeHeaders* pe) {
 		BYTE ch, got_this_from_original_first_thunk;
 
 		while (imp->FirstThunk || imp->Characteristics || imp->ForwarderChain || imp->Name || imp->OriginalFirstThunk || imp->TimeDateStamp) {
-			LONG_PTR* iat;
+			LONG_PTR* iat, FT;
 			if (imp->OriginalFirstThunk) {
 				iat = (LONG_PTR*)(pe->mem + RvaToOffset(imp->OriginalFirstThunk, pe));
+				FT = (LONG_PTR*)(pe->mem + RvaToOffset(imp->FirstThunk, pe));
 				got_this_from_original_first_thunk = 1;
 			}
 			else {
 				iat = (LONG_PTR*)(pe->mem + RvaToOffset(imp->FirstThunk, pe));
 				got_this_from_original_first_thunk = 0;
 			}
-			printf("%s\n", pe->mem + RvaToOffset(imp->Name, pe));
+			DWORD name = pe->mem + RvaToOffset(imp->Name, pe);
+			printf("%s\n", name);
 			printf("Add function? (Y/N): ");
 			scanf(" %c", &ch);
 			if (ch == 'y' || ch == 'Y') {
@@ -784,13 +768,22 @@ void EditImportTable2(PeHeaders* pe) {
 				memcpy(pe->mem + write_here + (j + 2) * sizeof(LONG_PTR*) + 2, new_name, strlen(new_name));
 				tmp = pe->sections[pe->countSec - 1].VirtualAddress + (j + 2) * sizeof(LONG_PTR*);
 				memcpy(pe->mem + write_here + j * sizeof(LONG_PTR*), &tmp, sizeof(LONG_PTR*));
+				
+				if (got_this_from_original_first_thunk) {
+					ExtendFileSizeCreatingNewSectionNeededSize(pe, (j + 2) * sizeof(LONG_PTR*) + strlen(new_name) + 2);
+					write_here = pe->mem + RvaToOffset(pe->sections[pe->countSec - 1].VirtualAddress, pe);
+					DWORD new_FT = pe->sections[pe->countSec - 1].VirtualAddress;
+					memcpy(write_here, FT, j * sizeof(LONG_PTR*));
+					memcpy(&imp->FirstThunk, &new_FT, sizeof(DWORD));
+				}
+				
 				free(new_name);
 
 				if (got_this_from_original_first_thunk) {
-					memcpy(&pe->impdir->OriginalFirstThunk, &new_iat, sizeof(DWORD));
+					memcpy(&imp->OriginalFirstThunk, &new_iat, sizeof(DWORD));
 				}
 				else {
-					memcpy(&pe->impdir->FirstThunk, &new_iat, sizeof(DWORD));
+					memcpy(&imp->FirstThunk, &new_iat, sizeof(DWORD));
 				}
 			}
 			imp++;
@@ -805,15 +798,19 @@ void EditImportTable2Header(PeHeaders* pe) {
 		DWORD new_chars, old_size;
 		BYTE ch;
 
-		ExtendFileSizeCreatingNewSectionNeededSize(pe, pe->sizeImpdir + sizeof(IMAGE_IMPORT_DESCRIPTOR));
+		ExtendFileSizeCreatingNewSectionNeededSize(pe, pe->sizeImpdir + sizeof(IMAGE_IMPORT_DESCRIPTOR)*2);
 		write_here = RvaToOffset(pe->sections[pe->countSec - 1].VirtualAddress, pe);
 		old_size = pe->sizeImpdir;
-		memcpy(pe->mem + write_here, pe->impdir, sizeof(IMAGE_IMPORT_DESCRIPTOR));
+		memcpy(pe->mem + write_here, pe->impdir, old_size);
 		pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress = pe->sections[pe->countSec - 1].VirtualAddress;
-		pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size += sizeof(IMAGE_IMPORT_DESCRIPTOR);
-		imp = (IMAGE_IMPORT_DESCRIPTOR*)(pe->mem + write_here + old_size);
+		pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size += sizeof(IMAGE_IMPORT_DESCRIPTOR)*2;
+		imp = (IMAGE_IMPORT_DESCRIPTOR*)(pe->mem + write_here);
+		while (imp->FirstThunk || imp->Characteristics || imp->ForwarderChain || imp->Name || imp->OriginalFirstThunk || imp->TimeDateStamp) {
+			imp++;
+		}
+		//imp = (IMAGE_IMPORT_DESCRIPTOR*)(pe->mem + write_here + old_size);
 		printf("You need to set a non-null value to the Characteristics field to consider the new import desc. is not the last: ");
-		scanf("%d", &new_chars);
+		scanf("%x", &new_chars);
 		if (new_chars == 0) {
 			imp->Characteristics = 1;
 		}
@@ -824,20 +821,28 @@ void EditImportTable2Header(PeHeaders* pe) {
 		scanf(" %c", &ch);
 		if (ch == 'y' || ch == 'Y') {
 			DWORD value;
-			BYTE* new_name = (BYTE*)(pe->mem + RvaToOffset(pe->sections[pe->countSec - 1].VirtualAddress, pe) + pe->sizeImpdir + sizeof(IMAGE_IMPORT_DESCRIPTOR) + 4);
+			BYTE* new_name = (BYTE*)(pe->mem + RvaToOffset(pe->sections[pe->countSec - 1].VirtualAddress, pe) + pe->sizeImpdir + sizeof(IMAGE_IMPORT_DESCRIPTOR)*2 + 4);
+			
 			printf("TimeDateStamp: ");
 			scanf("%d", &value);
 			imp->TimeDateStamp = value;
 			printf("Forwarded chain: ");
 			scanf("%d", &value);
 			imp->ForwarderChain = value;
-			printf("FirstThunk: ");
-			scanf("%d", &value);
-			imp->FirstThunk = value;
-			printf("Name: ");
+		
+			printf("Name .dll: ");
 			scanf("%s", new_name);
-			imp->Name = pe->sections[pe->countSec - 1].VirtualAddress + pe->sizeImpdir + sizeof(IMAGE_IMPORT_DESCRIPTOR) + 4;
+			imp->Name = pe->sections[pe->countSec - 1].VirtualAddress + pe->sizeImpdir + sizeof(IMAGE_IMPORT_DESCRIPTOR)*2 + 4;
+
+			//OriginalFirstThunk
+			ExtendFileSizeCreatingNewSection(pe);
+			imp->OriginalFirstThunk = pe->sections[pe->countSec - 1].VirtualAddress;
+
+			//FirstThunk
+			ExtendFileSizeCreatingNewSection(pe);
+			imp->FirstThunk = pe->sections[pe->countSec - 1].VirtualAddress;
 		}
+		pe->sizeImpdir += sizeof(IMAGE_IMPORT_DESCRIPTOR)*2;
 	}
 }
 
@@ -881,7 +886,7 @@ void EditExportTable(PeHeaders* pe) {
 				exp->Name = pe->sections[pe->countSec - 1].VirtualAddress;
 			}
 			else {
-				sprintf((char*)&pe->nthead->OptionalHeader.FileAlignment, "%s", (char*)&new_name);
+				sprintf(pe->mem + RvaToOffset(exp->Name, pe), "%s", new_name);
 			}
 
 			free(new_name);
@@ -922,6 +927,7 @@ void EditExportTable(PeHeaders* pe) {
 		}
 
 		printf("Modify address name? (Y/N): ");
+		getchar();
 		scanf(" %c", &ch);
 		if (ch == 'y' || ch == 'Y') {
 			WORD number;
@@ -929,7 +935,7 @@ void EditExportTable(PeHeaders* pe) {
 			printf("Number to modify: ");
 			scanf("%hd", &number);
 			printf("New address: ");
-			scanf("%d", &new_address);
+			scanf("%x", &new_address);
 			memcpy(&functionsArray[nameOrdinalsArray[number]], &new_address, sizeof(DWORD));
 		}
 	}
@@ -938,22 +944,28 @@ void EditExportTable(PeHeaders* pe) {
 void EditExportTable2(PeHeaders* pe) {
 	if (pe->nthead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress) {
 		IMAGE_EXPORT_DIRECTORY* exp;
+		DWORD* functionsArray;
 		DWORD* namesArray;
+		WORD* nameOrdinalsArray;
 		DWORD i;
 		BYTE ch;
 
 		exp = pe->expdir;
 
-		// указатель на массив адресов имён функций
-		DWORD offset_to_address_of_names = RvaToOffset(exp->AddressOfNames, pe);
-		namesArray = (DWORD*)(pe->mem + offset_to_address_of_names);
+		functionsArray = (DWORD*)(pe->mem + RvaToOffset(exp->AddressOfFunctions, pe));
+
+		namesArray = (DWORD*)(pe->mem + RvaToOffset(exp->AddressOfNames, pe));
+
+		nameOrdinalsArray = (WORD*)(pe->mem + RvaToOffset(exp->AddressOfNameOrdinals, pe));
 
 		DWORD size_of_names_array = 0;
 		DWORD* addresses_of_funcs = (DWORD*)malloc(sizeof(DWORD) * exp->NumberOfNames); //смещения до имен
 
 		for (i = 0; i < exp->NumberOfNames; ++i) {
 			DWORD offset = RvaToOffset(namesArray[i], pe); //получили смещение
-			printf("%d. %s\n", i, pe->mem + offset);
+			printf("%d. %s\t", i, pe->mem + offset);
+			printf("0x%x\n", functionsArray[nameOrdinalsArray[i]]);
+
 			size_of_names_array = size_of_names_array + strlen(pe->mem + offset) + 1; //размер + \0
 			addresses_of_funcs[i] = offset; //записали
 		}
@@ -961,11 +973,13 @@ void EditExportTable2(PeHeaders* pe) {
 		printf("Add function? (Y/N): ");
 		scanf("%c", &ch);
 		if (ch == 'y' || ch == 'Y') {
+			//редактируем AoN
 			const DWORD max_bytes = 100;
 			char* new_name = (char*)calloc(max_bytes, sizeof(char));
 			//На размер имен + на новое имя + на массив указателей на имена
+			ExtendFileSizeCreatingNewSectionNeededSize(pe, exp->NumberOfNames * sizeof(WORD));
 			ExtendFileSizeCreatingNewSectionNeededSize(pe, size_of_names_array + max_bytes + exp->NumberOfNames * sizeof(DWORD));
-			DWORD write_here = RvaToOffset(pe->sections[pe->countSec - 1].VirtualAddress, pe);
+			DWORD write_here_name = pe->mem + RvaToOffset(pe->sections[pe->countSec - 1].VirtualAddress, pe);
 			DWORD offset = 0;
 			printf("New name (100 bytes max.): ");
 			scanf("%s", new_name);
@@ -975,21 +989,50 @@ void EditExportTable2(PeHeaders* pe) {
 			for (i = 0; i < exp->NumberOfNames; i++) {
 				DWORD len = strlen(pe->mem + addresses_of_funcs[i]);
 				tmp = offset + pe->sections[pe->countSec - 1].VirtualAddress;
-				memcpy(pe->mem + write_here + offset, pe->mem + addresses_of_funcs[i], len);
-				memcpy(pe->mem + write_here + size_of_names_array + i * sizeof(DWORD), &tmp, sizeof(DWORD));
+				memcpy(write_here_name + offset, pe->mem + addresses_of_funcs[i], len);
+				memcpy(write_here_name + size_of_names_array + i * sizeof(DWORD), &tmp, sizeof(DWORD));
 				offset = offset + len + 1;
 			}
 
 			tmp = offset + pe->sections[pe->countSec - 1].VirtualAddress;
-			memcpy(pe->mem + write_here + offset, new_name, strlen(new_name));
-			memcpy(pe->mem + write_here + size_of_names_array + i * sizeof(DWORD), &tmp, sizeof(DWORD));
+			memcpy(write_here_name + offset, new_name, strlen(new_name));
+			DWORD last_adr = write_here_name + size_of_names_array + i * sizeof(DWORD);
+			memcpy(last_adr, &tmp, sizeof(DWORD));
 
 			exp->NumberOfNames++;
 
 			tmp = size_of_names_array + pe->sections[pe->countSec - 1].VirtualAddress;
 			memcpy(&pe->expdir->AddressOfNames, &tmp, sizeof(DWORD));
 
+			//редактируем AoNO
+			DWORD write_here = pe->mem + RvaToOffset(pe->sections[pe->countSec - 2].VirtualAddress, pe);
+			memcpy(write_here, nameOrdinalsArray, (exp->NumberOfNames-1) * sizeof(WORD));
+			WORD new_ordinal = exp->NumberOfNames-1;
+			memcpy(write_here + (exp->NumberOfNames - 1) * sizeof(WORD), &new_ordinal, sizeof(WORD));
+			pe->expdir->AddressOfNameOrdinals = pe->sections[pe->countSec - 2].VirtualAddress;
+
 			free(new_name);
+			
+			//редактируем AoF
+			DWORD* adr_new_fun;
+			ExtendFileSizeCreatingNewSectionNeededSize(pe, (exp->NumberOfFunctions + 1) * sizeof(DWORD));
+			write_here = pe->mem + RvaToOffset(pe->sections[pe->countSec - 1].VirtualAddress, pe);
+			memcpy(write_here, functionsArray, exp->NumberOfFunctions * sizeof(DWORD));
+			printf("Add address of function? (Y/N): ");
+			getchar();
+			scanf("%c", &ch);
+			if (ch == 'y' || ch == 'Y') {
+				DWORD new_address;
+				adr_new_fun = write_here + exp->NumberOfFunctions * sizeof(DWORD);
+				printf("New address: ");
+				scanf("%x", &new_address);
+				memcpy(adr_new_fun, &new_address, sizeof(DWORD));
+
+			}
+			exp->NumberOfFunctions++;
+			pe->expdir->AddressOfFunctions = pe->sections[pe->countSec - 1].VirtualAddress;
+
+
 		}
 
 		free(addresses_of_funcs);
@@ -1039,11 +1082,11 @@ DWORD ExtendFileSizeCreatingNewSection(PeHeaders* pe) {
 	memcpy(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Name, new_name, strlen(new_name));
 
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = raw_size;
-	//pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = virtual_size;
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].VirtualAddress = _CalculateNewVA(pe, virtual_size);
 
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].SizeOfRawData = raw_size;
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].PointerToRawData = _CalculateNewRawAddress(pe, raw_size);
+	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Characteristics = 0xE0000000;
 
 	pe->nthead->OptionalHeader.SizeOfImage = _RoundUpToNumber(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].VirtualAddress + virtual_size, pe->nthead->OptionalHeader.SectionAlignment);
 	pe->filesize = pe->filesize + raw_size;
@@ -1069,11 +1112,11 @@ DWORD ExtendFileSizeCreatingNewSectionNeededSize(PeHeaders* pe, const DWORD size
 	memcpy(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Name, new_name, strlen(new_name));
 
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = raw_size;
-	//pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = virtual_size;
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].VirtualAddress = _CalculateNewVA(pe, virtual_size);
 
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].SizeOfRawData = raw_size;
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].PointerToRawData = _CalculateNewRawAddress(pe, raw_size);
+	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Characteristics = 0xE0000000;
 
 	pe->nthead->OptionalHeader.SizeOfImage = _RoundUpToNumber(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].VirtualAddress + virtual_size, pe->nthead->OptionalHeader.SectionAlignment);
 	pe->filesize = pe->filesize + raw_size;
@@ -1124,11 +1167,11 @@ void ExtendFileSize(PeHeaders* pe) {
 	memcpy(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Name, new_name, sizeof(new_name));
 
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = raw_size;
-	//pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Misc.VirtualSize = virtual_size;
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].VirtualAddress = _CalculateNewVA(pe, virtual_size);
 
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].SizeOfRawData = raw_size;
 	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].PointerToRawData = _CalculateNewRawAddress(pe, raw_size);
+	pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].Characteristics = 0xE0000000;
 
 	pe->nthead->OptionalHeader.SizeOfImage = _RoundUpToNumber(pe->sections[pe->nthead->FileHeader.NumberOfSections - 1].VirtualAddress + virtual_size, pe->nthead->OptionalHeader.SectionAlignment);
 	pe->filesize = pe->filesize + raw_size;
